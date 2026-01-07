@@ -283,6 +283,7 @@ Here an example to make state in bold.
 type: custom:logbook-card
 entity: light.living_room
 card_mod:
+  prepend: true
   style: |
     .state {
       font-weight: bold;
