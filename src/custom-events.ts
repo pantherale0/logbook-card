@@ -191,30 +191,38 @@ export class CustomEventManager {
     // conditionals properly. Nested conditionals are excluded from the scope for now.
     // Future versions may add support for nested conditionals if needed.
 
-    const conditionalRegex = /\{%\s*if\s+(.+?)\s*%\}([\s\S]*?)(?:\{%\s*elif\s+(.+?)\s*%\}([\s\S]*?))*(?:\{%\s*else\s*%\}([\s\S]*?))?\{%\s*endif\s*%\}/g;
+    // Use a simpler, safer regex pattern to avoid ReDoS vulnerability
+    // Match the entire if...endif block without the problematic nested quantifiers
+    const conditionalRegex = /\{%\s*if\s+([^%]+)\s*%\}([\s\S]*?)\{%\s*endif\s*%\}/g;
 
-    return template.replace(conditionalRegex, (match, condition, trueBlock) => {
+    return template.replace(conditionalRegex, (_match, condition, content) => {
       try {
-        // Extract elif and else blocks
-        const parts = match.split(/\{%\s*(?:elif|else)\s*(?:[^%]+)?\s*%\}/);
+        // Split content by elif and else blocks
+        const elifPattern = /\{%\s*elif\s+([^%]+)\s*%\}/g;
+        const elsePattern = /\{%\s*else\s*%\}/;
+
         const conditions: string[] = [condition];
-        const blocks: string[] = [trueBlock];
+        const blocks: string[] = [];
 
-        // Extract elif conditions
-        const elifMatches = match.matchAll(/\{%\s*elif\s+(.+?)\s*%\}/g);
-        for (const elifMatch of elifMatches) {
-          conditions.push(elifMatch[1]);
-        }
+        // Split by else first
+        const [beforeElse, afterElse] = content.split(elsePattern);
 
-        // Find elif and else blocks
-        for (let i = 1; i < parts.length; i++) {
-          const block = parts[i];
-          if (block && block.trim()) {
-            blocks.push(block);
+        // If there's an else block, it will be the last block
+        const elseBlock = afterElse !== undefined ? afterElse.trim() : null;
+
+        // Split the before-else part by elif
+        const parts = beforeElse.split(elifPattern);
+        blocks.push(parts[0].trim()); // First if block
+
+        // Extract elif conditions and blocks
+        for (let i = 1; i < parts.length; i += 2) {
+          if (i < parts.length - 1) {
+            conditions.push(parts[i].trim()); // elif condition
+            blocks.push(parts[i + 1].trim()); // elif block
           }
         }
 
-        // Evaluate conditions
+        // Evaluate conditions in order
         for (let i = 0; i < conditions.length; i++) {
           if (this.evaluateCondition(conditions[i], context)) {
             return blocks[i] || '';
@@ -222,11 +230,7 @@ export class CustomEventManager {
         }
 
         // Return else block if exists
-        if (blocks.length > conditions.length) {
-          return blocks[blocks.length - 1];
-        }
-
-        return '';
+        return elseBlock || '';
       } catch (error) {
         console.error('Conditional processing error:', error);
         return '';
