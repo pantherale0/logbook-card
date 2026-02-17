@@ -28,6 +28,7 @@ export interface LogbookCardConfigBase extends LovelaceCardConfig {
   hold_action?: ActionConfig;
   double_tap_action?: ActionConfig;
   allow_copy?: boolean;
+  custom?: { [eventType: string]: CustomEventConfig };
 }
 
 export interface EntityCardConfig {
@@ -165,7 +166,23 @@ export interface CustomLogEvent {
   icon_color?: string;
 }
 
-export type HistoryOrCustomLogEvent = History | CustomLogEvent;
+export interface CustomEvent {
+  type: 'customEvent';
+  event_type: string;
+  name: string;
+  message: string;
+  start: Date;
+  icon?: string;
+  icon_color?: string;
+}
+
+export interface CustomEventConfig {
+  name?: string;
+  icon?: string;
+  state_template?: string;
+}
+
+export type HistoryOrCustomLogEvent = History | CustomLogEvent | CustomEvent;
 export interface Attribute {
   value: string | TemplateResult;
   name: string;
