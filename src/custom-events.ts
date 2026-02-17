@@ -168,6 +168,7 @@ export class CustomEventManager {
         }
         return value;
       case 'capitalize':
+        if (!String(value)) return value;
         return (
           String(value)
             .charAt(0)
@@ -186,7 +187,9 @@ export class CustomEventManager {
 
   private processConditionals(template: string, context: any): string {
     // Simple conditional processing
-    // This is a very basic implementation and won't handle nested conditionals properly
+    // NOTE: This is a basic implementation for the initial release and won't handle nested
+    // conditionals properly. Nested conditionals are excluded from the scope for now.
+    // Future versions may add support for nested conditionals if needed.
 
     const conditionalRegex = /\{%\s*if\s+(.+?)\s*%\}([\s\S]*?)(?:\{%\s*elif\s+(.+?)\s*%\}([\s\S]*?))*(?:\{%\s*else\s*%\}([\s\S]*?))?\{%\s*endif\s*%\}/g;
 
@@ -275,8 +278,8 @@ export class CustomEventManager {
     this.handlers.clear();
   }
 
-  destroy(): void {
-    this.unsubscribeAll();
+  async destroy(): Promise<void> {
+    await this.unsubscribeAll();
     this.events = [];
   }
 }

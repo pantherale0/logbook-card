@@ -57,7 +57,11 @@ export class LogbookCard extends LogbookBaseCard {
     super.disconnectedCallback();
     // Clean up event subscriptions when the card is disconnected
     if (this.customEventManager) {
-      this.customEventManager.destroy();
+      // Don't await here as disconnectedCallback must be sync
+      // The unsubscribe operations will complete asynchronously
+      this.customEventManager.destroy().catch(error => {
+        console.error('Error cleaning up custom event manager:', error);
+      });
     }
   }
 
@@ -108,14 +112,19 @@ export class LogbookCard extends LogbookBaseCard {
     // Initialize custom event manager if custom events are configured
     if (this.config.custom && Object.keys(this.config.custom).length > 0) {
       if (this.customEventManager) {
-        this.customEventManager.destroy();
+        // Clean up existing manager
+        this.customEventManager.destroy().catch(error => {
+          console.error('Error cleaning up custom event manager:', error);
+        });
       }
       if (this.hass) {
         this.customEventManager = new CustomEventManager(this.hass, this.config.custom);
         this.customEventManager.subscribe();
       }
     } else if (this.customEventManager) {
-      this.customEventManager.destroy();
+      this.customEventManager.destroy().catch(error => {
+        console.error('Error cleaning up custom event manager:', error);
+      });
       this.customEventManager = undefined;
     }
 
