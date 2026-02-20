@@ -331,4 +331,74 @@ describe('CustomEventManager', () => {
     expect(events[0].event_type).toBe('zigbee2mqtt/bridge/logging');
     expect(events[0].name).toBe('Z2M Logging');
   });
+
+  test('should not log errors when unsubscribeAll is called concurrently (race condition)', async () => {
+    // This test covers the race condition where destroy() and subscribe() are both
+    // called without awaiting, leading to double-unsubscribe on the same handlers.
+    const customConfig: { [eventType: string]: CustomEventConfig } = {
+      'zigbee2mqtt/bridge/event': { name: 'Z2M Event' },
+      'zigbee2mqtt_bridge_logging': { name: 'Z2M Logging' },
+    };
+
+    eventManager = new CustomEventManager(mockHass, customConfig);
+    await eventManager.subscribe();
+
+    const consoleErrorSpy = vi.spyOn(console, 'error');
+
+    // Simulate concurrent destroy() and subscribe() (e.g., disconnectedCallback then connectedCallback)
+    // Neither is awaited, mimicking the real lifecycle behaviour.
+    const destroyPromise = eventManager.destroy();
+    const subscribePromise = eventManager.subscribe();
+
+    await Promise.all([destroyPromise, subscribePromise]);
+
+    // No "Failed to unsubscribe" errors should be logged because unsubscribeAll()
+    // now clears the handlers map before awaiting each unsubscribe.
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringMatching(/Failed to unsubscribe/),
+      expect.anything(),
+    );
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  test('should invoke onEvent callback when an MQTT event is received', async () => {
+    const customConfig: { [eventType: string]: CustomEventConfig } = {
+      'zigbee2mqtt/bridge/event': { name: 'Z2M Event' },
+    };
+
+    eventManager = new CustomEventManager(mockHass, customConfig);
+    const onEvent = vi.fn();
+    eventManager.setOnEventCallback(onEvent);
+    await eventManager.subscribe();
+
+    expect(onEvent).not.toHaveBeenCalled();
+
+    (mockHass.connection as any)._triggerMqtt('zigbee2mqtt/bridge/event', { type: 'device_joined', data: {} });
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+  });
+
+  test('should invoke onEvent callback when a HA bus event is received', async () => {
+    const customConfig: { [eventType: string]: CustomEventConfig } = {
+      'test_event': { name: 'Test' },
+    };
+
+    eventManager = new CustomEventManager(mockHass, customConfig);
+    const onEvent = vi.fn();
+    eventManager.setOnEventCallback(onEvent);
+    await eventManager.subscribe();
+
+    expect(onEvent).not.toHaveBeenCalled();
+
+    (mockHass.connection as any)._triggerEvent('test_event', {
+      event_type: 'test_event',
+      data: {},
+      time_fired: new Date().toISOString(),
+      origin: 'LOCAL',
+      context: { id: 'ctx', user_id: null, parent_id: null },
+    });
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+  });
 });

@@ -24,8 +24,13 @@ export class CustomEventManager {
   private handlers: Map<string, CustomEventHandler> = new Map();
   private events: CustomEvent[] = [];
   private maxEvents = 100; // Keep last 100 events per event type
+  private onEventCallback?: () => void;
 
   constructor(private hass: ExtendedHomeAssistant, private customConfig: { [eventType: string]: CustomEventConfig }) {}
+
+  setOnEventCallback(callback: () => void): void {
+    this.onEventCallback = callback;
+  }
 
   async subscribe(): Promise<void> {
     // Unsubscribe from existing handlers
@@ -99,6 +104,8 @@ export class CustomEventManager {
       if (this.events.length > this.maxEvents) {
         this.events = this.events.slice(-this.maxEvents);
       }
+
+      this.onEventCallback?.();
     } catch (error) {
       console.error(`Error handling MQTT event ${eventType}:`, error);
     }
@@ -123,6 +130,8 @@ export class CustomEventManager {
       if (this.events.length > this.maxEvents) {
         this.events = this.events.slice(-this.maxEvents);
       }
+
+      this.onEventCallback?.();
     } catch (error) {
       console.error(`Error handling event ${eventType}:`, error);
     }
@@ -341,7 +350,9 @@ export class CustomEventManager {
   }
 
   async unsubscribeAll(): Promise<void> {
-    for (const handler of this.handlers.values()) {
+    const handlers = [...this.handlers.values()];
+    this.handlers.clear();
+    for (const handler of handlers) {
       if (handler.unsubscribe) {
         try {
           await handler.unsubscribe();
@@ -350,7 +361,6 @@ export class CustomEventManager {
         }
       }
     }
-    this.handlers.clear();
   }
 
   async destroy(): Promise<void> {
