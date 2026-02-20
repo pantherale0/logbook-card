@@ -51,6 +51,7 @@ export class LogbookCard extends LogbookBaseCard {
       }
       this.customEventManager.subscribe();
     }
+    this.resubscribeToEntityStateChanges();
   }
 
   disconnectedCallback(): void {
@@ -67,7 +68,7 @@ export class LogbookCard extends LogbookBaseCard {
 
   public setConfig(config: LogbookCardConfig): void {
     checkBaseConfig(config);
-    if (!config.entity) {
+    if (!config.entity && (!config.custom || Object.keys(config.custom).length === 0)) {
       throw new Error(localize('logbook_card.missing_entity'));
     }
     if (config.hidden_state && !Array.isArray(config.hidden_state)) {
@@ -128,56 +129,81 @@ export class LogbookCard extends LogbookBaseCard {
       this.customEventManager = undefined;
     }
 
+    this.resubscribeToEntityStateChanges();
+
     this.updateHistory();
+  }
+
+  private resubscribeToEntityStateChanges(): void {
+    if (this.config?.entity && this.hass) {
+      this.subscribeToEntityStateChanges([this.config.entity]);
+    }
   }
 
   updateHistory(): void {
     const hass = this.hass;
-    if (hass && this.config && this.config.entity) {
-      const stateObj = this.config.entity in hass.states ? hass.states[this.config.entity] : null;
+    if (hass && this.config) {
+      const startDate = calculateStartDate(this.config.hours_to_show);
 
-      if (stateObj) {
-        this.config.title =
-          this.config?.title ?? localize('logbook_card.default_title', '{entity}', stateObj.attributes.friendly_name);
+      // Get custom events if configured (works with or without entity)
+      const customEvents = this.customEventManager ? this.customEventManager.getEvents(startDate) : [];
 
-        const startDate = calculateStartDate(this.config.hours_to_show);
-        const entityConfig: EntityHistoryConfig = {
-          attributes: this.config.attributes,
-          entity: this.config.entity,
-          state_map: toStateMapRegex(this.config.state_map),
-          hidden_state_regexp: this.config.hidden_state_regexp,
-          date_format: this.config.date_format,
-          minimal_duration: this.config.minimal_duration,
-          show_history: this.config.show_history || false,
-        };
-        const historyPromise = getHistory(this.hass, entityConfig, startDate);
+      if (this.config.entity) {
+        const stateObj = this.config.entity in hass.states ? hass.states[this.config.entity] : null;
 
-        const customLogConfig: EntityCustomLogConfig = {
-          entity: this.config.entity!,
-          custom_logs: this.config.custom_logs === true || false,
-          log_map: toCustomLogMapRegex(this.config.custom_log_map || []),
-        };
-        const customLogsPromise = getCustomLogsPromise(this.hass, customLogConfig, startDate);
+        if (stateObj) {
+          this.config.title =
+            this.config?.title ?? localize('logbook_card.default_title', '{entity}', stateObj.attributes.friendly_name);
 
-        // Get custom events if configured
-        const customEvents = this.customEventManager ? this.customEventManager.getEvents(startDate) : [];
+          const entityConfig: EntityHistoryConfig = {
+            attributes: this.config.attributes,
+            entity: this.config.entity,
+            state_map: toStateMapRegex(this.config.state_map),
+            hidden_state_regexp: this.config.hidden_state_regexp,
+            date_format: this.config.date_format,
+            minimal_duration: this.config.minimal_duration,
+            show_history: this.config.show_history || false,
+          };
+          const historyPromise = getHistory(this.hass, entityConfig, startDate);
 
-        Promise.all([historyPromise, customLogsPromise]).then(([history, customLogs]) => {
-          let historyAndCustomLogs = [...history, ...customLogs, ...customEvents].sort(
-            (a, b) => a.start.valueOf() - b.start.valueOf(),
-          );
+          const customLogConfig: EntityCustomLogConfig = {
+            entity: this.config.entity!,
+            custom_logs: this.config.custom_logs === true || false,
+            log_map: toCustomLogMapRegex(this.config.custom_log_map || []),
+          };
+          const customLogsPromise = getCustomLogsPromise(this.hass, customLogConfig, startDate);
 
-          if (this.config?.desc) {
-            historyAndCustomLogs = historyAndCustomLogs.reverse();
-          }
+          Promise.all([historyPromise, customLogsPromise]).then(([history, customLogs]) => {
+            let historyAndCustomLogs = [...history, ...customLogs, ...customEvents].sort(
+              (a, b) => a.start.valueOf() - b.start.valueOf(),
+            );
 
-          if (this.config && this.config.max_items && this.config.max_items > 0) {
-            historyAndCustomLogs = historyAndCustomLogs.splice(0, this.config?.max_items);
-          }
+            if (this.config?.desc) {
+              historyAndCustomLogs = historyAndCustomLogs.reverse();
+            }
 
-          this.history = historyAndCustomLogs;
-          this.lastHistoryChanged = new Date();
-        });
+            if (this.config && this.config.max_items && this.config.max_items > 0) {
+              historyAndCustomLogs = historyAndCustomLogs.splice(0, this.config?.max_items);
+            }
+
+            this.history = historyAndCustomLogs;
+            this.lastHistoryChanged = new Date();
+          });
+        }
+      } else {
+        // No entity configured — only display custom events
+        let items = [...customEvents].sort((a, b) => a.start.valueOf() - b.start.valueOf());
+
+        if (this.config?.desc) {
+          items = items.reverse();
+        }
+
+        if (this.config && this.config.max_items && this.config.max_items > 0) {
+          items = items.splice(0, this.config?.max_items);
+        }
+
+        this.history = items;
+        this.lastHistoryChanged = new Date();
       }
     }
   }

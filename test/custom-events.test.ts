@@ -5,6 +5,7 @@ import { ExtendedHomeAssistant, CustomEventConfig } from '../src/types';
 // Mock HomeAssistant connection
 const createMockHass = (): ExtendedHomeAssistant => {
   const eventHandlers: Map<string, ((event: any) => void)[]> = new Map();
+  const mqttHandlers: Map<string, ((result: any) => void)[]> = new Map();
 
   return {
     connection: {
@@ -26,11 +27,48 @@ const createMockHass = (): ExtendedHomeAssistant => {
           }
         };
       }),
-      // Helper to trigger events for testing
+      subscribeMessage: vi.fn(async (callback: (result: any) => void, subscribeMsg: any) => {
+        const topic = subscribeMsg?.trigger?.topic || '';
+        if (!mqttHandlers.has(topic)) {
+          mqttHandlers.set(topic, []);
+        }
+        mqttHandlers.get(topic)!.push(callback);
+
+        // Return unsubscribe function
+        return async () => {
+          const handlers = mqttHandlers.get(topic);
+          if (handlers) {
+            const index = handlers.indexOf(callback);
+            if (index > -1) {
+              handlers.splice(index, 1);
+            }
+          }
+        };
+      }),
+      // Helper to trigger HA bus events for testing
       _triggerEvent: (eventType: string, event: any) => {
         const handlers = eventHandlers.get(eventType);
         if (handlers) {
           handlers.forEach(handler => handler(event));
+        }
+      },
+      // Helper to trigger MQTT messages for testing
+      _triggerMqtt: (topic: string, payload: any) => {
+        const handlers = mqttHandlers.get(topic);
+        if (handlers) {
+          const result = {
+            variables: {
+              trigger: {
+                platform: 'mqtt',
+                topic,
+                payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
+                payload_json: typeof payload === 'object' ? payload : null,
+                qos: 0,
+              },
+            },
+            context: { id: 'test-context', parent_id: null, user_id: null },
+          };
+          handlers.forEach(handler => handler(result));
         }
       },
     },
@@ -103,7 +141,7 @@ describe('CustomEventManager', () => {
     });
   });
 
-  test('should render complex template with conditionals', async () => {
+  test('should render complex template with conditionals via MQTT', async () => {
     const customConfig: { [eventType: string]: CustomEventConfig } = {
       'zigbee2mqtt/bridge/event': {
         name: 'Zigbee2MQTT',
@@ -123,50 +161,35 @@ describe('CustomEventManager', () => {
     eventManager = new CustomEventManager(mockHass, customConfig);
     await eventManager.subscribe();
 
-    // Test device_joined event
-    const joinEvent = {
-      event_type: 'zigbee2mqtt/bridge/event',
-      data: {
-        type: 'device_joined',
-        data: {
-          friendly_name: 'Living Room Sensor',
-          ieee_address: '0x00124b001234abcd',
-        },
-      },
-      time_fired: new Date().toISOString(),
-      origin: 'LOCAL',
-      context: {
-        id: 'test-context-id-1',
-        user_id: null,
-        parent_id: null,
-      },
-    };
+    // Verify MQTT subscription was used (not HA event bus)
+    expect((mockHass.connection as any).subscribeMessage).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({
+        type: 'subscribe_trigger',
+        trigger: expect.objectContaining({ platform: 'mqtt', topic: 'zigbee2mqtt/bridge/event' }),
+      }),
+    );
 
-    (mockHass.connection as any)._triggerEvent('zigbee2mqtt/bridge/event', joinEvent);
+    // Test device_joined event via MQTT
+    (mockHass.connection as any)._triggerMqtt('zigbee2mqtt/bridge/event', {
+      type: 'device_joined',
+      data: {
+        friendly_name: 'Living Room Sensor',
+        ieee_address: '0x00124b001234abcd',
+      },
+    });
 
     let events = eventManager.getEvents(new Date(Date.now() - 1000));
     expect(events).toHaveLength(1);
     expect(events[0].message).toContain('Living Room Sensor joined the network');
 
-    // Test device_leave event
-    const leaveEvent = {
-      event_type: 'zigbee2mqtt/bridge/event',
+    // Test device_leave event via MQTT
+    (mockHass.connection as any)._triggerMqtt('zigbee2mqtt/bridge/event', {
+      type: 'device_leave',
       data: {
-        type: 'device_leave',
-        data: {
-          ieee_address: '0x00124b001234abcd',
-        },
+        ieee_address: '0x00124b001234abcd',
       },
-      time_fired: new Date().toISOString(),
-      origin: 'LOCAL',
-      context: {
-        id: 'test-context-id-2',
-        user_id: null,
-        parent_id: null,
-      },
-    };
-
-    (mockHass.connection as any)._triggerEvent('zigbee2mqtt/bridge/event', leaveEvent);
+    });
 
     events = eventManager.getEvents(new Date(Date.now() - 1000));
     expect(events).toHaveLength(2);
@@ -275,5 +298,37 @@ describe('CustomEventManager', () => {
 
     events = eventManager.getEvents(new Date(Date.now() - 1000));
     expect(events[1].message).toBe('Unknown');
+  });
+
+  test('should use subscribeMessage for MQTT topics and subscribeEvents for HA events', async () => {
+    const customConfig: { [eventType: string]: CustomEventConfig } = {
+      'zigbee2mqtt/bridge/logging': { name: 'Z2M Logging', icon: 'mdi:zigbee' },
+      'ha_event_type': { name: 'HA Event', icon: 'mdi:home' },
+    };
+
+    eventManager = new CustomEventManager(mockHass, customConfig);
+    await eventManager.subscribe();
+
+    expect((mockHass.connection as any).subscribeMessage).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({ type: 'subscribe_trigger', trigger: { platform: 'mqtt', topic: 'zigbee2mqtt/bridge/logging' } }),
+    );
+    expect(mockHass.connection.subscribeEvents).toHaveBeenCalledWith(expect.any(Function), 'ha_event_type');
+  });
+
+  test('should handle MQTT event with no state_template', async () => {
+    const customConfig: { [eventType: string]: CustomEventConfig } = {
+      'zigbee2mqtt/bridge/logging': { name: 'Z2M Logging' },
+    };
+
+    eventManager = new CustomEventManager(mockHass, customConfig);
+    await eventManager.subscribe();
+
+    (mockHass.connection as any)._triggerMqtt('zigbee2mqtt/bridge/logging', { level: 'info', message: 'Connected' });
+
+    const events = eventManager.getEvents(new Date(Date.now() - 1000));
+    expect(events).toHaveLength(1);
+    expect(events[0].event_type).toBe('zigbee2mqtt/bridge/logging');
+    expect(events[0].name).toBe('Z2M Logging');
   });
 });

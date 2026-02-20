@@ -84,7 +84,24 @@ export class MultipleLogbookCard extends LogbookBaseCard {
       duration_labels: { ...config.duration_labels },
       separator_style: { ...DEFAULT_SEPARATOR_STYLE, ...config.separator_style },
     };
+
+    if (this.hass && this.config.entities) {
+      this.resubscribeToEntityStateChanges();
+    }
+
     this.updateHistory();
+  }
+
+  connectedCallback(): void {
+    super.connectedCallback();
+    this.resubscribeToEntityStateChanges();
+  }
+
+  private resubscribeToEntityStateChanges(): void {
+    if (this.config?.entities && this.hass) {
+      const entityIds = this.config.entities.map(e => e.entity).filter((e): e is string => !!e);
+      this.subscribeToEntityStateChanges(entityIds);
+    }
   }
 
   updateHistory(): void {
