@@ -20,6 +20,7 @@ import { checkBaseConfig } from './config-validator';
 import { addCustomCard } from './ha/custom-card';
 import { calculateStartDate, dayToHours } from './date-helpers';
 import { classMap } from 'lit/directives/class-map.js';
+import { CustomEventManager } from './custom-events';
 
 addCustomCard('logbook-card', 'Logbook Card', 'A custom card to display entity history');
 
@@ -39,6 +40,30 @@ export class LogbookCard extends LogbookBaseCard {
   @state() private history: Array<HistoryOrCustomLogEvent> = [];
 
   private lastHistoryChanged?: Date;
+  private customEventManager?: CustomEventManager;
+
+  connectedCallback(): void {
+    super.connectedCallback();
+    // Re-subscribe to events when the card is connected
+    if (this.config?.custom && Object.keys(this.config.custom).length > 0 && this.hass) {
+      if (!this.customEventManager) {
+        this.customEventManager = new CustomEventManager(this.hass, this.config.custom);
+      }
+      this.customEventManager.subscribe();
+    }
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    // Clean up event subscriptions when the card is disconnected
+    if (this.customEventManager) {
+      // Don't await here as disconnectedCallback must be sync
+      // The unsubscribe operations will complete asynchronously
+      this.customEventManager.destroy().catch(error => {
+        console.error('Error cleaning up custom event manager:', error);
+      });
+    }
+  }
 
   public setConfig(config: LogbookCardConfig): void {
     checkBaseConfig(config);
@@ -84,6 +109,25 @@ export class LogbookCard extends LogbookBaseCard {
       separator_style: { ...DEFAULT_SEPARATOR_STYLE, ...config.separator_style },
     };
 
+    // Initialize custom event manager if custom events are configured
+    if (this.config.custom && Object.keys(this.config.custom).length > 0) {
+      if (this.customEventManager) {
+        // Clean up existing manager
+        this.customEventManager.destroy().catch(error => {
+          console.error('Error cleaning up custom event manager:', error);
+        });
+      }
+      if (this.hass) {
+        this.customEventManager = new CustomEventManager(this.hass, this.config.custom);
+        this.customEventManager.subscribe();
+      }
+    } else if (this.customEventManager) {
+      this.customEventManager.destroy().catch(error => {
+        console.error('Error cleaning up custom event manager:', error);
+      });
+      this.customEventManager = undefined;
+    }
+
     this.updateHistory();
   }
 
@@ -115,8 +159,13 @@ export class LogbookCard extends LogbookBaseCard {
         };
         const customLogsPromise = getCustomLogsPromise(this.hass, customLogConfig, startDate);
 
+        // Get custom events if configured
+        const customEvents = this.customEventManager ? this.customEventManager.getEvents(startDate) : [];
+
         Promise.all([historyPromise, customLogsPromise]).then(([history, customLogs]) => {
-          let historyAndCustomLogs = [...history, ...customLogs].sort((a, b) => a.start.valueOf() - b.start.valueOf());
+          let historyAndCustomLogs = [...history, ...customLogs, ...customEvents].sort(
+            (a, b) => a.start.valueOf() - b.start.valueOf(),
+          );
 
           if (this.config?.desc) {
             historyAndCustomLogs = historyAndCustomLogs.reverse();

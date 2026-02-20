@@ -96,6 +96,7 @@ resources:
 | double_tap_action | [action object](#action-options)                          | optional     | v1.7.0  |            | none                     | Action to take on double tap                                                                                                                 |
 | minimal_duration  | number (in seconds)                                       | optional     | v1.11.0 |            |                          | Filter entry if duration is less than `minimal_duration` (entry will be squash if previous and next entry has same state)                    |
 | group_by_day      | boolean                                                   | optional     | v2.0.0  |            | false                    | Group entries by day using a day separator                                                                                                   |
+| custom            | [custom event object](#custom-event-object)               | optional     | v2.6.0  |            | {}                       | Listen to Home Assistant events and render custom messages                                                                                   |
 
 #### Multiple entities Logbook Card options
 
@@ -167,6 +168,77 @@ If you use wildcard, make sure to put the more specific states first.
 | hidden     | boolean | false              | hide custom log                                  | v2.3.0 |
 
 If you use wildcard, make sure to put the more specific custom log first.
+
+#### Custom Event object
+
+The `custom` configuration allows you to listen to Home Assistant events and render customized messages using Jinja2-like templates.
+
+**Configuration Format:**
+
+```yaml
+custom:
+  event_type:  # The event type to listen for (e.g., 'zigbee2mqtt/bridge/event')
+    name: string        # Display name for the event source
+    icon: string        # Icon to display (e.g., 'mdi:zigbee')
+    state_template: >   # Template to transform event data into readable text
+      # Jinja2-like template
+```
+
+**Supported Template Features:**
+
+- Variable substitution: `{{ variable }}`
+- Property access: `{{ trigger.payload_json.data.name }}`
+- Conditionals: `{% if condition %}...{% elif condition %}...{% else %}...{% endif %}`
+- Filters: `| default(value)`, `| capitalize`, `| upper`, `| lower`, `| tojson`
+- Variable assignment: `{% set variable = value %}`
+
+**Available Context:**
+
+The template context follows Home Assistant's event trigger structure:
+
+- `trigger.event`: The full Home Assistant event object
+  - `event_type`: The type of event
+  - `data`: Event-specific data
+  - `origin`: Event origin (usually 'LOCAL')
+  - `time_fired`: ISO timestamp when the event was fired
+  - `context`: Event context with `id`, `user_id`, and `parent_id`
+- `trigger.payload_json`: Shortcut to `trigger.event.data` (the event data payload)
+- `trigger.platform`: Always 'event' for custom events
+- `trigger.event_type`: The event type being listened to
+
+**Example:**
+
+```yaml
+type: custom:logbook-card
+entity: input_button.dummy_entity  # Required but not used for custom events
+title: Event Log
+desc: true
+max_items: 20
+custom:
+  zigbee2mqtt/bridge/event:
+    name: Zigbee2MQTT
+    icon: mdi:zigbee
+    state_template: >
+      {% set data = trigger.payload_json.data | default({}) %}
+      {% set type = trigger.payload_json.type %}
+      {% if type == 'device_joined' %}
+        📥 {{ data.friendly_name | default(data.ieee_address) }} joined the network
+      {% elif type == 'device_interview' %}
+        {% if data.status == 'started' %}
+          🔄 Interview started for {{ data.friendly_name | default(data.ieee_address) }}
+        {% elif data.status == 'successful' %}
+          ✅ Interview successful for {{ data.friendly_name | default(data.ieee_address) }}
+        {% else %}
+          ⚠️ Interview {{ data.status }} for {{ data.friendly_name | default(data.ieee_address) }}
+        {% endif %}
+      {% elif type == 'device_leave' %}
+        ❌ {{ data.friendly_name | default(data.ieee_address) }} left the network
+      {% elif type == 'device_announce' %}
+        📡 Device announce: {{ data.friendly_name | default(data.ieee_address) }}
+      {% else %}
+        {{ type | capitalize }}: {{ data | tojson }}
+      {% endif %}
+```
 
 #### Available show options
 
@@ -519,6 +591,54 @@ custom_log_map:
 ```
 
 ![Custom log with custom icon](./images/custom_log_map.png)
+
+### Custom Events
+
+Listen to Home Assistant events and display customized messages:
+
+```yaml
+type: custom:logbook-card
+entity: input_button.dummy_entity
+title: Event Log
+desc: true
+max_items: 20
+show_history: false
+custom:
+  zigbee2mqtt/bridge/event:
+    name: Zigbee2MQTT
+    icon: mdi:zigbee
+    state_template: >
+      {% set data = trigger.payload_json.data | default({}) %}
+      {% set type = trigger.payload_json.type %}
+      {% if type == 'device_joined' %}
+        📥 {{ data.friendly_name | default(data.ieee_address) }} joined the network
+      {% elif type == 'device_interview' %}
+        {% if data.status == 'started' %}
+          🔄 Interview started for {{ data.friendly_name | default(data.ieee_address) }}
+        {% elif data.status == 'successful' %}
+          ✅ Interview successful for {{ data.friendly_name | default(data.ieee_address) }}
+        {% else %}
+          ⚠️ Interview {{ data.status }} for {{ data.friendly_name | default(data.ieee_address) }}
+        {% endif %}
+      {% elif type == 'device_leave' %}
+        ❌ {{ data.friendly_name | default(data.ieee_address) }} left the network
+      {% elif type == 'device_announce' %}
+        📡 Device announce: {{ data.friendly_name | default(data.ieee_address) }}
+      {% else %}
+        {{ type | capitalize }}: {{ data | tojson }}
+      {% endif %}
+  mqtt/custom_topic:
+    name: Custom MQTT
+    icon: mdi:message
+    state_template: >
+      {{ trigger.payload_json.message | default("Unknown event") }}
+```
+
+This example shows how to:
+- Listen to multiple event types
+- Use conditional logic to display different messages based on event data
+- Apply filters like `default()` and `capitalize()`
+- Access nested event data with `trigger.payload_json`
 
 <!-- Badges -->
 

@@ -1,6 +1,7 @@
 import { CSSResultGroup, LitElement, TemplateResult, css, html } from 'lit';
 import {
   CustomLogEvent,
+  CustomEvent,
   ExtendedHomeAssistant,
   LogbookCardConfigBase,
   Attribute,
@@ -83,6 +84,12 @@ export abstract class LogbookBaseCard extends LitElement {
             ${this.renderHistoryItem(item, isLast, config)}
           `;
         }
+        if (item.type === 'customEvent') {
+          return html`
+            ${shouldRenderDaySeparator ? this.renderDaySeparator(item, config) : ``}
+            ${this.renderCustomEvent(item, isLast, config)}
+          `;
+        }
         return html`
           ${shouldRenderDaySeparator ? this.renderDaySeparator(item, config) : ``}
           ${this.renderCustomLogEvent(item, isLast, config)}
@@ -156,10 +163,39 @@ export abstract class LogbookBaseCard extends LitElement {
     `;
   }
 
+  protected renderCustomEvent(
+    customEvent: CustomEvent,
+    isLast: boolean,
+    config: LogbookCardConfigBase,
+  ): TemplateResult {
+    return html`
+      <div class="item custom-event">
+        ${this.renderCustomEventIcon(customEvent, config)}
+        <div class="item-content">
+          <span class="custom-event__name">${customEvent.name}</span>
+          <span class="custom-event__separator">-</span>
+          <span class="custom-event__message">${customEvent.message}</span>
+          <div class="date">
+            <logbook-date .hass=${this.hass} .date=${customEvent.start} .config=${config}></logbook-date>
+          </div>
+        </div>
+      </div>
+      ${!isLast ? this.renderSeparator(config) : ``}
+    `;
+  }
+
   protected renderCustomLogIcon(customLog: CustomLogEvent, config: LogbookCardConfigBase): TemplateResult | void {
     if (config?.show?.icon) {
       const state = this.hass.states[customLog.entity] as HassEntity;
       return this.renderIcon(state, customLog.icon, customLog.icon_color);
+    }
+  }
+
+  protected renderCustomEventIcon(customEvent: CustomEvent, config: LogbookCardConfigBase): TemplateResult | void {
+    if (config?.show?.icon) {
+      // For custom events, we don't have a specific entity, so use a dummy state
+      // or just render the icon directly
+      return this.renderIconOnly(customEvent.icon, customEvent.icon_color);
     }
   }
 
@@ -178,7 +214,22 @@ export abstract class LogbookBaseCard extends LitElement {
     `;
   }
 
-  protected renderDaySeparator(item: CustomLogEvent | History, config: LogbookCardConfigBase): TemplateResult {
+  private renderIconOnly(icon: string | undefined, color: string | undefined): TemplateResult {
+    const iconStyle: StyleInfo = {};
+    if (color) {
+      iconStyle.color = color;
+    }
+    return html`
+      <div class="item-icon" style=${styleMap(iconStyle)}>
+        <ha-icon .icon=${icon || 'mdi:information'}></ha-icon>
+      </div>
+    `;
+  }
+
+  protected renderDaySeparator(
+    item: CustomLogEvent | CustomEvent | History,
+    config: LogbookCardConfigBase,
+  ): TemplateResult {
     if (!config.group_by_day) {
       return html``;
     }
