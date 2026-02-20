@@ -7,6 +7,19 @@ export interface CustomEventHandler {
   unsubscribe?: () => Promise<void>;
 }
 
+interface MqttTriggerResult {
+  variables: {
+    trigger: {
+      platform: 'mqtt';
+      topic: string;
+      payload: string;
+      payload_json: any;
+      qos: number;
+    };
+  };
+  context: any;
+}
+
 export class CustomEventManager {
   private handlers: Map<string, CustomEventHandler> = new Map();
   private events: CustomEvent[] = [];
@@ -24,11 +37,37 @@ export class CustomEventManager {
     }
   }
 
+  private isMqttTopic(eventType: string): boolean {
+    // MQTT topics are identified by the presence of '/' (e.g. "zigbee2mqtt/bridge/event").
+    // Home Assistant event bus event types follow a convention of lowercase with underscores
+    // and do not contain '/' characters, making this a reliable discriminator.
+    return eventType.includes('/');
+  }
+
   private async subscribeToEvent(eventType: string, config: CustomEventConfig): Promise<void> {
     try {
-      const unsubscribe = await this.hass.connection.subscribeEvents<HassEvent>(event => {
-        this.handleEvent(eventType, config, event);
-      }, eventType);
+      let unsubscribe: () => Promise<void>;
+
+      if (this.isMqttTopic(eventType)) {
+        // Subscribe to MQTT topic via HA trigger subscription
+        unsubscribe = await this.hass.connection.subscribeMessage<MqttTriggerResult>(
+          result => {
+            this.handleMqttTrigger(eventType, config, result);
+          },
+          {
+            type: 'subscribe_trigger',
+            trigger: {
+              platform: 'mqtt',
+              topic: eventType,
+            },
+          } as any,
+        );
+      } else {
+        // Subscribe to HA event bus event
+        unsubscribe = await this.hass.connection.subscribeEvents<HassEvent>(event => {
+          this.handleEvent(eventType, config, event);
+        }, eventType);
+      }
 
       this.handlers.set(eventType, {
         eventType,
@@ -37,6 +76,31 @@ export class CustomEventManager {
       });
     } catch (error) {
       console.error(`Failed to subscribe to event ${eventType}:`, error);
+    }
+  }
+
+  private handleMqttTrigger(eventType: string, config: CustomEventConfig, result: MqttTriggerResult): void {
+    try {
+      const trigger = result?.variables?.trigger;
+      const context: any = { trigger };
+      const fallbackData = trigger?.payload_json ?? trigger?.payload ?? {};
+
+      const customEvent: CustomEvent = {
+        type: 'customEvent',
+        event_type: eventType,
+        name: config.name || eventType,
+        message: this.renderTemplateWithContext(config.state_template || '', context, fallbackData),
+        start: new Date(),
+        icon: config.icon,
+      };
+
+      this.events.push(customEvent);
+
+      if (this.events.length > this.maxEvents) {
+        this.events = this.events.slice(-this.maxEvents);
+      }
+    } catch (error) {
+      console.error(`Error handling MQTT event ${eventType}:`, error);
     }
   }
 
@@ -65,27 +129,29 @@ export class CustomEventManager {
   }
 
   private renderTemplate(template: string, event: HassEvent): string {
-    // For now, we'll do a simple template rendering
-    // In a real implementation, we would use Home Assistant's template engine
-    // This is a simplified version that handles basic Jinja2 patterns
-
     if (!template) {
       return JSON.stringify(event.data);
     }
 
+    const context: any = {
+      trigger: {
+        event: event,
+        payload_json: event.data,
+        platform: 'event',
+        event_type: event.event_type,
+      },
+    };
+
+    return this.renderTemplateWithContext(template, context, event.data);
+  }
+
+  private renderTemplateWithContext(template: string, context: any, fallbackData: any): string {
+    if (!template) {
+      return JSON.stringify(fallbackData);
+    }
+
     try {
       let result = template;
-
-      // Create a context object for template evaluation
-      // Following Home Assistant's template context structure for event triggers
-      const context: any = {
-        trigger: {
-          event: event,
-          payload_json: event.data,
-          platform: 'event',
-          event_type: event.event_type,
-        },
-      };
 
       // Handle {% set variable = value %} statements
       result = result.replace(/\{%\s*set\s+(\w+)\s*=\s*([^%]+)\s*%\}/g, (_match, varName, expr) => {
@@ -113,10 +179,10 @@ export class CustomEventManager {
       // Clean up extra whitespace
       result = result.replace(/\s+/g, ' ').trim();
 
-      return result || JSON.stringify(event.data || event);
+      return result || JSON.stringify(fallbackData);
     } catch (error) {
       console.error('Template rendering error:', error);
-      return JSON.stringify(event.data || event);
+      return JSON.stringify(fallbackData);
     }
   }
 
