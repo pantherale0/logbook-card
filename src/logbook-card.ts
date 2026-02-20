@@ -48,6 +48,7 @@ export class LogbookCard extends LogbookBaseCard {
     if (this.config?.custom && Object.keys(this.config.custom).length > 0 && this.hass) {
       if (!this.customEventManager) {
         this.customEventManager = new CustomEventManager(this.hass, this.config.custom);
+        this.customEventManager.setOnEventCallback(() => this.updateHistory());
       }
       this.customEventManager.subscribe();
     }
@@ -123,6 +124,7 @@ export class LogbookCard extends LogbookBaseCard {
       }
       if (this.hass) {
         this.customEventManager = new CustomEventManager(this.hass, this.config.custom);
+        this.customEventManager.setOnEventCallback(() => this.updateHistory());
         this.customEventManager.subscribe();
       }
     } else if (this.customEventManager) {

@@ -361,4 +361,44 @@ describe('CustomEventManager', () => {
 
     consoleErrorSpy.mockRestore();
   });
+
+  test('should invoke onEvent callback when an MQTT event is received', async () => {
+    const customConfig: { [eventType: string]: CustomEventConfig } = {
+      'zigbee2mqtt/bridge/event': { name: 'Z2M Event' },
+    };
+
+    eventManager = new CustomEventManager(mockHass, customConfig);
+    const onEvent = vi.fn();
+    eventManager.setOnEventCallback(onEvent);
+    await eventManager.subscribe();
+
+    expect(onEvent).not.toHaveBeenCalled();
+
+    (mockHass.connection as any)._triggerMqtt('zigbee2mqtt/bridge/event', { type: 'device_joined', data: {} });
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+  });
+
+  test('should invoke onEvent callback when a HA bus event is received', async () => {
+    const customConfig: { [eventType: string]: CustomEventConfig } = {
+      'test_event': { name: 'Test' },
+    };
+
+    eventManager = new CustomEventManager(mockHass, customConfig);
+    const onEvent = vi.fn();
+    eventManager.setOnEventCallback(onEvent);
+    await eventManager.subscribe();
+
+    expect(onEvent).not.toHaveBeenCalled();
+
+    (mockHass.connection as any)._triggerEvent('test_event', {
+      event_type: 'test_event',
+      data: {},
+      time_fired: new Date().toISOString(),
+      origin: 'LOCAL',
+      context: { id: 'ctx', user_id: null, parent_id: null },
+    });
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+  });
 });
