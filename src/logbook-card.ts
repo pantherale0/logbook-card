@@ -51,6 +51,7 @@ export class LogbookCard extends LogbookBaseCard {
       }
       this.customEventManager.subscribe();
     }
+    this.resubscribeToEntityStateChanges();
   }
 
   disconnectedCallback(): void {
@@ -128,7 +129,15 @@ export class LogbookCard extends LogbookBaseCard {
       this.customEventManager = undefined;
     }
 
+    this.resubscribeToEntityStateChanges();
+
     this.updateHistory();
+  }
+
+  private resubscribeToEntityStateChanges(): void {
+    if (this.config?.entity && this.hass) {
+      this.subscribeToEntityStateChanges([this.config.entity]);
+    }
   }
 
   updateHistory(): void {

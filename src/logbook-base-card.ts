@@ -13,14 +13,13 @@ import { handleAction, ActionHandlerEvent, hasAction } from 'custom-card-helpers
 import { actionHandler } from './action-handler-directive';
 import { styleMap, StyleInfo } from 'lit/directives/style-map.js';
 import { isSameDay } from './date-helpers';
-import { HassEntity } from 'home-assistant-js-websocket/dist/types';
+import { HassEntity, StateChangedEvent } from 'home-assistant-js-websocket/dist/types';
 
 export abstract class LogbookBaseCard extends LitElement {
   @property({ attribute: false }) public hass!: ExtendedHomeAssistant;
 
   protected mode: 'multiple' | 'single' = 'single';
-  private updateHistoryIntervalId: NodeJS.Timeout | null = null;
-  private UPDATE_INTERVAL = 5000;
+  private stateChangedUnsubscribe?: () => Promise<void>;
 
   protected _handleAction(ev: ActionHandlerEvent): void {
     if (this.hass && ev.detail.action && !!ev.target && ev.target['entity']) {
@@ -30,15 +29,45 @@ export abstract class LogbookBaseCard extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
-    this.updateHistoryIntervalId = setInterval(() => this.updateHistory(), this.UPDATE_INTERVAL);
     setTimeout(() => this.updateHistory(), 1);
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
-    if (this.updateHistoryIntervalId !== null) {
-      clearInterval(this.updateHistoryIntervalId);
+    if (this.stateChangedUnsubscribe) {
+      this.stateChangedUnsubscribe().catch(error => {
+        console.error('Error unsubscribing from state_changed events:', error);
+      });
+      this.stateChangedUnsubscribe = undefined;
     }
+  }
+
+  protected subscribeToEntityStateChanges(entities: string[]): void {
+    // Unsubscribe from any existing subscription first
+    if (this.stateChangedUnsubscribe) {
+      this.stateChangedUnsubscribe().catch(error => {
+        console.error('Error unsubscribing from state_changed events:', error);
+      });
+      this.stateChangedUnsubscribe = undefined;
+    }
+
+    if (entities.length === 0 || !this.hass) {
+      return;
+    }
+
+    const entitySet = new Set(entities);
+    this.hass.connection
+      .subscribeEvents<StateChangedEvent>(event => {
+        if (entitySet.has(event.data.entity_id)) {
+          this.updateHistory();
+        }
+      }, 'state_changed')
+      .then(unsub => {
+        this.stateChangedUnsubscribe = unsub;
+      })
+      .catch(error => {
+        console.error('Failed to subscribe to state_changed events:', error);
+      });
   }
 
   abstract updateHistory(): void;
