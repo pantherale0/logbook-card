@@ -81,6 +81,12 @@ describe('CustomEventManager', () => {
         message: 'Hello World',
       },
       time_fired: new Date().toISOString(),
+      origin: 'LOCAL',
+      context: {
+        id: 'test-context-id',
+        user_id: null,
+        parent_id: null,
+      },
     };
 
     (mockHass.connection as any)._triggerEvent('test_event', testEvent);
@@ -128,6 +134,12 @@ describe('CustomEventManager', () => {
         },
       },
       time_fired: new Date().toISOString(),
+      origin: 'LOCAL',
+      context: {
+        id: 'test-context-id-1',
+        user_id: null,
+        parent_id: null,
+      },
     };
 
     (mockHass.connection as any)._triggerEvent('zigbee2mqtt/bridge/event', joinEvent);
@@ -146,6 +158,12 @@ describe('CustomEventManager', () => {
         },
       },
       time_fired: new Date().toISOString(),
+      origin: 'LOCAL',
+      context: {
+        id: 'test-context-id-2',
+        user_id: null,
+        parent_id: null,
+      },
     };
 
     (mockHass.connection as any)._triggerEvent('zigbee2mqtt/bridge/event', leaveEvent);
@@ -170,14 +188,28 @@ describe('CustomEventManager', () => {
 
     // Trigger an old event
     (mockHass.connection as any)._triggerEvent('test_event', {
+      event_type: 'test_event',
       data: {},
       time_fired: pastDate.toISOString(),
+      origin: 'LOCAL',
+      context: {
+        id: 'test-context-id-3',
+        user_id: null,
+        parent_id: null,
+      },
     });
 
     // Trigger a new event
     (mockHass.connection as any)._triggerEvent('test_event', {
+      event_type: 'test_event',
       data: {},
       time_fired: now.toISOString(),
+      origin: 'LOCAL',
+      context: {
+        id: 'test-context-id-4',
+        user_id: null,
+        parent_id: null,
+      },
     });
 
     // Filter to only get events from 5 seconds ago
@@ -214,8 +246,15 @@ describe('CustomEventManager', () => {
 
     // Event with name
     (mockHass.connection as any)._triggerEvent('test_event', {
+      event_type: 'test_event',
       data: { name: 'Test Name' },
       time_fired: new Date().toISOString(),
+      origin: 'LOCAL',
+      context: {
+        id: 'test-context-id-5',
+        user_id: null,
+        parent_id: null,
+      },
     });
 
     let events = eventManager.getEvents(new Date(Date.now() - 1000));
@@ -223,8 +262,15 @@ describe('CustomEventManager', () => {
 
     // Event without name
     (mockHass.connection as any)._triggerEvent('test_event', {
+      event_type: 'test_event',
       data: {},
       time_fired: new Date().toISOString(),
+      origin: 'LOCAL',
+      context: {
+        id: 'test-context-id-6',
+        user_id: null,
+        parent_id: null,
+      },
     });
 
     events = eventManager.getEvents(new Date(Date.now() - 1000));

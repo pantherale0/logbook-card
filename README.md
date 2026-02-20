@@ -194,7 +194,17 @@ custom:
 
 **Available Context:**
 
-- `trigger.payload_json`: The event data payload
+The template context follows Home Assistant's event trigger structure:
+
+- `trigger.event`: The full Home Assistant event object
+  - `event_type`: The type of event
+  - `data`: Event-specific data
+  - `origin`: Event origin (usually 'LOCAL')
+  - `time_fired`: ISO timestamp when the event was fired
+  - `context`: Event context with `id`, `user_id`, and `parent_id`
+- `trigger.payload_json`: Shortcut to `trigger.event.data` (the event data payload)
+- `trigger.platform`: Always 'event' for custom events
+- `trigger.event_type`: The event type being listened to
 
 **Example:**
 

@@ -1,4 +1,5 @@
 import { CustomEvent, CustomEventConfig, ExtendedHomeAssistant } from './types';
+import { HassEvent } from 'home-assistant-js-websocket/dist/types';
 
 export interface CustomEventHandler {
   eventType: string;
@@ -25,7 +26,7 @@ export class CustomEventManager {
 
   private async subscribeToEvent(eventType: string, config: CustomEventConfig): Promise<void> {
     try {
-      const unsubscribe = await this.hass.connection.subscribeEvents<any>(event => {
+      const unsubscribe = await this.hass.connection.subscribeEvents<HassEvent>(event => {
         this.handleEvent(eventType, config, event);
       }, eventType);
 
@@ -39,7 +40,7 @@ export class CustomEventManager {
     }
   }
 
-  private handleEvent(eventType: string, config: CustomEventConfig, event: any): void {
+  private handleEvent(eventType: string, config: CustomEventConfig, event: HassEvent): void {
     try {
       // Create a custom event entry
       const customEvent: CustomEvent = {
@@ -47,7 +48,7 @@ export class CustomEventManager {
         event_type: eventType,
         name: config.name || eventType,
         message: this.renderTemplate(config.state_template || '', event),
-        start: new Date(event.time_fired || new Date()),
+        start: new Date(event.time_fired),
         icon: config.icon,
       };
 
@@ -63,22 +64,26 @@ export class CustomEventManager {
     }
   }
 
-  private renderTemplate(template: string, event: any): string {
+  private renderTemplate(template: string, event: HassEvent): string {
     // For now, we'll do a simple template rendering
     // In a real implementation, we would use Home Assistant's template engine
     // This is a simplified version that handles basic Jinja2 patterns
 
     if (!template) {
-      return JSON.stringify(event.data || event);
+      return JSON.stringify(event.data);
     }
 
     try {
       let result = template;
 
       // Create a context object for template evaluation
+      // Following Home Assistant's template context structure for event triggers
       const context: any = {
         trigger: {
-          payload_json: event.data || {},
+          event: event,
+          payload_json: event.data,
+          platform: 'event',
+          event_type: event.event_type,
         },
       };
 
