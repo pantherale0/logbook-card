@@ -341,7 +341,9 @@ export class CustomEventManager {
   }
 
   async unsubscribeAll(): Promise<void> {
-    for (const handler of this.handlers.values()) {
+    const handlers = [...this.handlers.values()];
+    this.handlers.clear();
+    for (const handler of handlers) {
       if (handler.unsubscribe) {
         try {
           await handler.unsubscribe();
@@ -350,7 +352,6 @@ export class CustomEventManager {
         }
       }
     }
-    this.handlers.clear();
   }
 
   async destroy(): Promise<void> {

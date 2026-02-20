@@ -58,9 +58,12 @@ export class LogbookCard extends LogbookBaseCard {
     super.disconnectedCallback();
     // Clean up event subscriptions when the card is disconnected
     if (this.customEventManager) {
+      // Clear the reference immediately so connectedCallback won't reuse this manager
+      const manager = this.customEventManager;
+      this.customEventManager = undefined;
       // Don't await here as disconnectedCallback must be sync
       // The unsubscribe operations will complete asynchronously
-      this.customEventManager.destroy().catch(error => {
+      manager.destroy().catch(error => {
         console.error('Error cleaning up custom event manager:', error);
       });
     }

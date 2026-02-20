@@ -331,4 +331,34 @@ describe('CustomEventManager', () => {
     expect(events[0].event_type).toBe('zigbee2mqtt/bridge/logging');
     expect(events[0].name).toBe('Z2M Logging');
   });
+
+  test('should not log errors when unsubscribeAll is called concurrently (race condition)', async () => {
+    // This test covers the race condition where destroy() and subscribe() are both
+    // called without awaiting, leading to double-unsubscribe on the same handlers.
+    const customConfig: { [eventType: string]: CustomEventConfig } = {
+      'zigbee2mqtt/bridge/event': { name: 'Z2M Event' },
+      'zigbee2mqtt_bridge_logging': { name: 'Z2M Logging' },
+    };
+
+    eventManager = new CustomEventManager(mockHass, customConfig);
+    await eventManager.subscribe();
+
+    const consoleErrorSpy = vi.spyOn(console, 'error');
+
+    // Simulate concurrent destroy() and subscribe() (e.g., disconnectedCallback then connectedCallback)
+    // Neither is awaited, mimicking the real lifecycle behaviour.
+    const destroyPromise = eventManager.destroy();
+    const subscribePromise = eventManager.subscribe();
+
+    await Promise.all([destroyPromise, subscribePromise]);
+
+    // No "Failed to unsubscribe" errors should be logged because unsubscribeAll()
+    // now clears the handlers map before awaiting each unsubscribe.
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringMatching(/Failed to unsubscribe/),
+      expect.anything(),
+    );
+
+    consoleErrorSpy.mockRestore();
+  });
 });
