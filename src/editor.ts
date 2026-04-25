@@ -10,7 +10,7 @@ const options = {
   required: {
     icon: 'tune',
     name: localize('editor.required_option_name'),
-    secondary: localize('editor.required_option_name'),
+    secondary: localize('editor.required_option_description'),
     show: true,
   },
   showOptions: {

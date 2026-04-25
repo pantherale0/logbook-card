@@ -24,13 +24,13 @@
     "missing_entities" : "Please define at least one entity in entities"
   },
   "editor": {
-    "required_option_name": "Required",
-    "required_option_description": "Required options for this card",
+    "required_option_name": "General",
+    "required_option_description": "General options for this card",
     "show_option_name": "Show",
     "show_option_description": "Customize what to display",
     "appearance_option_name": "Appearance",
     "appearance_option_description": "Customize the title, number of events to display, etc ...",
-    "entity_label": "Entity (Required)",
+    "entity_label": "Entity (Optional)",
     "title_label": "Title (Optional)",
     "hours_to_show_label": "Hours to show",
     "max_items_label": "Max Items: Maximum of events to display (-1 to display all events)",
@@ -45,6 +45,6 @@
     "display_icon_label": "Display icon",
     "display_separator_label": "Display separator",
     "display_custom_logs_label": "Display custom logs",
-    "note": "Note: Setting hidden_state, duration_labels, attributes, separator_style, state_map are available exclusively using Code Editor."
+    "note": "Note: Setting hidden_state, duration_labels, attributes, separator_style, state_map, custom are available exclusively using Code Editor."
   }
 }
